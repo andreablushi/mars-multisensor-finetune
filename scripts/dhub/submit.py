@@ -1,0 +1,133 @@
+"""Running one stage here, or registering it on DigitalHub and starting it there."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import ssl
+from collections.abc import Callable, Mapping
+from functools import partial
+
+import digitalhub as dh
+import urllib3.connection
+from dotenv import load_dotenv
+from mars_multisensor_mae.logs.tracker import flat_run_name
+
+from configs.load import load_config
+from configs.paths import ENV_PATH, REPO_ROOT
+from configs.schema import Config
+
+MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
+PYTHONPATH = "/shared:/shared/src:/shared/scripts"
+
+MAE_REQUIREMENT = "mars-multisensor-mae @"
+
+MAE_MAIN = "refs/heads/main.tar.gz"
+
+SECRETS = [
+    "DHCORE_PERSONAL_ACCESS_TOKEN",
+    "WANDB_API_KEY",
+    "WANDB_ENTITY",
+    "WANDB_PROJECT",
+]
+
+if PYTHONPATH in os.environ.get("PYTHONPATH", ""):
+    # A platform job only: the proxy's certificate fails Python 3.13's strict check
+    urllib3.connection.create_urllib3_context = partial(
+        urllib3.connection.create_urllib3_context,
+        verify_flags=ssl.VERIFY_X509_PARTIAL_CHAIN,
+    )
+
+
+def requested_read_workers(config: Config, stage: str) -> int:
+    """Return how many processes read tiles beside one stage's work, twice its cores.
+
+    Args:
+        config: The run's config.
+        stage: Which stage, as `configs/digitalhub.yaml` names it.
+
+    Returns:
+        workers: Twice the cores the stage is given.
+    """
+    return 2 * int(config.digitalhub.stages[stage].resources["cpu"])
+
+
+def run_stage(
+    stage: str,
+    run: Callable,
+    description: str,
+    flags: Mapping[str, str] | None = None,
+) -> None:
+    """Run one stage here, or start it from a pushed branch or tag with the MAE of one.
+
+    Args:
+        stage: Which stage, naming its handler, registration and resources.
+        run: The handler, which a run here calls the function under.
+        description: What the stage does, shown by --help.
+        flags: The switches the handler takes beside the run name and the overrides,
+            with their help.
+    """
+    parsed = argparse.ArgumentParser(description=description)
+    parsed.add_argument(
+        "--dh", action="store_true", help="submit to DigitalHub instead of running here"
+    )
+    parsed.add_argument("--ref", default="main", help="branch or tag to run")
+    parsed.add_argument(
+        "--mae-ref",
+        default="main",
+        help="MAE branch or tag a job installs, the local MAE checkout read here",
+    )
+    parsed.add_argument(
+        "run_name",
+        help="what the run is called, naming its model, results and tracked run",
+    )
+    for flag, told in (flags or {}).items():
+        parsed.add_argument(f"--{flag}", action="store_true", help=told)
+    parsed.add_argument(
+        "overrides",
+        nargs="*",
+        help="what to change in the configs, as dotted keys",
+    )
+    arguments = vars(parsed.parse_args())
+    dh_run, ref, mae_ref = (arguments.pop(key) for key in ("dh", "ref", "mae_ref"))
+    load_dotenv(ENV_PATH)
+    if not dh_run:
+        # The platform calls the handler, a run here the function under it.
+        run.__wrapped__(**arguments)
+        return
+    platform = load_config(arguments["run_name"], arguments["overrides"])[0].digitalhub
+    asked = platform.stages[stage]
+    # The job installs the repository's requirements itself, so no image is built
+    function = dh.get_or_create_project(platform.project).new_function(
+        name=asked.function,
+        kind="python",
+        python_version=platform.python_version,
+        base_image=platform.base_image,
+        code_src=f"git+{platform.repository}#{ref}",
+        handler="scripts.dhub.job:run_installed_stage",
+        requirements=str(REPO_ROOT / "requirements.txt"),
+    )
+    job = function.run(
+        action="job",
+        name=flat_run_name(arguments["run_name"]),
+        profile=asked.profile,
+        resources=asked.resources,
+        secrets=SECRETS,
+        envs=[
+            {"name": "PYTHONPATH", "value": PYTHONPATH},
+            {"name": "PYTORCH_CUDA_ALLOC_CONF", "value": "expandable_segments:True"},
+            *({"name": name, "value": os.environ[name]} for name in MINTED_FROM),
+        ],
+        parameters={
+            "stage": stage,
+            "arguments": arguments,
+            "requirements": [
+                line.replace(MAE_MAIN, f"{mae_ref}.tar.gz")
+                if line.startswith(MAE_REQUIREMENT)
+                else line
+                for line in function.spec.requirements
+            ],
+        },
+        wait=False,
+    )
+    print(job.key)

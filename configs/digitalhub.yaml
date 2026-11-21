@@ -1,0 +1,16 @@
+# Platform project.
+project: mars-multisensor-features
+
+# Repository a job clones.
+repository: https://github.com/andreablushi/mars-multisensor-finetune
+
+# Job interpreter and base image.
+python_version: PYTHON3_13
+base_image: python:3.13-slim
+
+# Function, profile and resources of the stage; tile readers are twice the cores.
+stages:
+  benchmark:
+    function: benchmark-mae
+    profile: 1xv100-shared
+    resources: {cpu: "4", mem: 24Gi, disk: 240Gi}
