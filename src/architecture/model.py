@@ -69,9 +69,12 @@ class BenchmarkModel(nn.Module):
             context: Every instrument's tokens side by side, without their CLS.
         """
         present = {name: tokens.present for name, tokens in batch.items()}
-        _, contexts = self.mae.embed_tokens(batch, present)
+        encoded = self.mae.embed_tokens(batch, present)
         return Context.joined(
-            [Context(*(part[:, 1:] for part in held)) for held in contexts.values()]
+            [
+                Context(*(part[:, 1:] for part in held))
+                for held in encoded.instruments.values()
+            ]
         )
 
     def forward(self, batch: dict[str, Tokens]) -> Tensor:

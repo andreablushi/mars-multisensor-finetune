@@ -9,7 +9,7 @@ import torch
 from dhub.store import published_dataset_build, published_ice_labels
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
-from mars_multisensor_mae.architecture.pretrained import trained_model
+from mars_multisensor_mae.architecture.load import cross_sensor_mae_with_logged_weights
 from mars_multisensor_mae.configs.load import named_sample
 from mars_multisensor_mae.logs.tracker import (
     console_logger,
@@ -105,7 +105,7 @@ def run_benchmark(
             tracked, [BENCHMARK, FINETUNE], HEADS, ARTIFACTS_ROOT
         )
     log.info("%s of %s on %s", BENCHMARK, tracked, device)
-    mae = trained_model(model, run, run_name, ARTIFACTS_ROOT)
+    mae = cross_sensor_mae_with_logged_weights(model, run, run_name, ARTIFACTS_ROOT)
     # Train both protocols on each share of the training tiles, kept at their best
     if finetune or not evaluate:
         heads = {}
