@@ -12,7 +12,6 @@ from mars_multisensor_mae.architecture.models.tokens import Tokens
 from mars_multisensor_mae.configs.load import named_seed
 from mars_multisensor_mae.dataset.loader import padded_tokens, read_cached_tile
 from mars_multisensor_mae.dataset.models.patch import PatchLayout
-from mars_multisensor_mae.dataset.patches import patch_budget_selection
 from mars_multisensor_mae.dataset.store import DatasetBuild
 from sklearn.model_selection import StratifiedGroupKFold
 
@@ -21,25 +20,6 @@ TARGETS = {
     "5m": "consistency_5m",
     "rs": "radar_surface_power",
 }
-
-
-def measured_patch_spots(sample: Mapping[str, Mapping[str, np.ndarray]]) -> np.ndarray:
-    """Return the ground spot of every patch holding a measurement, any instrument.
-
-    Args:
-        sample: Each instrument's patch arrays of one tile or crop.
-
-    Returns:
-        spots: East and north of each such patch in metres. (S, 2)
-    """
-    return np.concatenate(
-        [
-            held["position"][
-                held["measured"].any(tuple(range(1, held["measured"].ndim))), :2
-            ]
-            for held in sample.values()
-        ]
-    )
 
 
 def read_covering_crops_batch(
@@ -71,7 +51,7 @@ def read_covering_crops_batch(
     samples, tiles, scored = [], [], []
     for identity in identities:
         sample = read_cached_tile(build, identity, layout, cache)
-        grounds = measured_patch_spots(sample)  # (G, 2)
+        grounds = sample.measured_ground_spots  # (G, 2)
         apart = np.linalg.norm(points[:, None] - grounds[None], axis=-1)  # (P * P, G)
         left = apart.min(1) <= reach_m
         centres, reached = [], []
@@ -79,8 +59,8 @@ def read_covering_crops_batch(
         while left.any() or not centres:
             first = int(np.argmax(left))
             centre = grounds[apart[first].argmin()]
-            crop = patch_budget_selection(sample, budget, centre)
-            spots = measured_patch_spots(crop)
+            crop = sample.budget_cut(budget, centre)
+            spots = crop.measured_ground_spots
             near = (
                 np.linalg.norm(points[:, None] - spots[None], axis=-1).min(1) <= reach_m
             )

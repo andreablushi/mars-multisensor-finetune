@@ -95,13 +95,7 @@ def evaluate(
     by_tile = build.read_observation_metadata()
     images = [
         ice_image(
-            drawn_arrays(
-                build,
-                shown,
-                by_tile[tile][shown],
-                layout.sizes[shown],
-                layout.shapes[shown],
-            ),
+            drawn_arrays(build, shown, by_tile[tile][shown], layout),
             targets[tile],
             {protocol: held[tile] for protocol, held in drawn.items()},
         )
