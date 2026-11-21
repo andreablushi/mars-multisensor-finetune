@@ -68,7 +68,7 @@ def read_covering_crops_batch(
             left &= ~near
             centres.append(centre)
             reached.append(near)
-            samples.append(crop)
+            samples.append(build.normalised_sample(crop))
         reached = np.stack(reached)  # (C, P * P)
         # A point no crop reaches is predicted by the crop centred nearest it
         lone = ~reached.any(0)
