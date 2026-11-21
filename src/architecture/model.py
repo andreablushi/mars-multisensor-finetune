@@ -68,8 +68,7 @@ class BenchmarkModel(nn.Module):
         Returns:
             context: Every instrument's tokens side by side, without their CLS.
         """
-        present = {name: tokens.present for name, tokens in batch.items()}
-        encoded = self.mae.embed_tokens(batch, present)
+        encoded = self.mae.embed_tokens(batch)
         return Context.joined(
             [
                 Context(*(part[:, 1:] for part in held))
