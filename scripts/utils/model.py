@@ -46,6 +46,7 @@ def built_pretrained_model(
         config.model.decoder_dim,
         config.model.decoder_heads,
         config.model.decoder_depth,
+        config.model.projector_dim,
         config.dataset.seed,
     )
 
