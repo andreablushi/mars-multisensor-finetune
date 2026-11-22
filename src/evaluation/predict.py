@@ -1,32 +1,30 @@
-"""One batch of test crops on the model device: each tile's prediction per model."""
+"""Predicting SWIM's points with one model, and with several over one split."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 
-import numpy as np
 import torch
+from mars_multisensor_mae.architecture.models.context import Context
+from torch.utils.data import DataLoader
 
 from architecture import BenchmarkModel
-from architecture.probe_model import AttentiveProbeModel
 from dataset.models.swim import SwimBatch
+from evaluation.models.metrics import TilePredictions
 
 
-def crop_mean_predictions(
-    models: Mapping[str, Mapping[str, BenchmarkModel]],
-    batch: SwimBatch,
-    device: torch.device,
-) -> dict[str, dict[str, dict[str, np.ndarray]]]:
-    """Return each tile's prediction by every model, a point the mean of its crops'.
+def predict_ice_consistency(
+    model: BenchmarkModel, batch: SwimBatch, context: Context
+) -> TilePredictions:
+    """Return each tile's prediction by one model, a point the mean of its crops'.
 
     Args:
-        models: Each share's model of each protocol, on the device.
+        model: The model, on the device.
         batch: The crops, a tile's crops side by side, and the points each predicts.
-        device: Where the models run.
+        context: Every instrument's tokens of the crops, as the model's MAE reads them.
 
     Returns:
-        predictions: Each tile's prediction of every point and target, keyed by
-            share, protocol and tile. (P * P, Z)
+        predictions: Each tile's prediction of every point and target. (P * P, Z)
     """
     # Each point is the mean of the crops of its tile that predict it
     weights = torch.as_tensor(batch.scored, dtype=torch.float32).unsqueeze(-1)
@@ -34,26 +32,41 @@ def crop_mean_predictions(
         tile: [at for at, one in enumerate(batch.tiles) if one == tile]
         for tile in dict.fromkeys(batch.tiles)
     }
-    tokens = {name: one.to(device) for name, one in batch.tokens.items()}
-    predictions = {share: {} for share in models}
-    with torch.autocast(device.type, dtype=torch.float16):
-        # The frozen MAE is the same under every share, so it reads once
-        still = next(
-            model
-            for model in next(iter(models.values())).values()
-            if isinstance(model, AttentiveProbeModel)
-        )
-        frozen = still.mae.embed_tokens(tokens).patch_tokens_context()
-        for share, held in models.items():
-            for protocol, model in held.items():
-                read_tokens = (
-                    frozen
-                    if isinstance(model, AttentiveProbeModel)
-                    else model.mae.embed_tokens(tokens).patch_tokens_context()
-                )
-                predicted = model.probe(read_tokens).float().cpu() * weights
-                predictions[share][protocol] = {
-                    tile: (predicted[at].sum(0) / weights[at].sum(0)).numpy()
-                    for tile, at in crops.items()
-                }
+    predicted = model.probe(context).float().cpu() * weights
+    return {
+        tile: (predicted[at].sum(0) / weights[at].sum(0)).numpy()
+        for tile, at in crops.items()
+    }
+
+
+def ice_consistency_predictions_by_model(
+    models: Mapping[tuple[str, str], BenchmarkModel],
+    loader: DataLoader,
+    device: torch.device,
+) -> dict[tuple[str, str], TilePredictions]:
+    """Return every model's prediction of each tile of one split.
+
+    Args:
+        models: Each model, on the device, keyed by share and protocol.
+        loader: The split, in batches, each tile read as the budget crops covering
+            SWIM's points.
+        device: Where the models run.
+
+    Returns:
+        predictions: Each model's prediction of every tile, keyed as the models.
+    """
+    predictions = {key: {} for key in models}
+    with torch.no_grad():
+        for batch in loader:
+            tokens = {name: one.to(device) for name, one in batch.tokens.items()}
+            with torch.autocast(device.type, dtype=torch.float16):
+                # A frozen MAE is shared by every share, so each MAE reads once
+                contexts = {}
+                for key, model in models.items():
+                    if id(model.mae) not in contexts:
+                        encoded = model.mae.embed_tokens(tokens)
+                        contexts[id(model.mae)] = encoded.patch_tokens_context()
+                    predictions[key].update(
+                        predict_ice_consistency(model, batch, contexts[id(model.mae)])
+                    )
     return predictions

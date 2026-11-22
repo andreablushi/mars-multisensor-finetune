@@ -15,8 +15,8 @@ from wandb.sdk.wandb_run import Run
 
 from architecture import BenchmarkModel
 from dataset.loader import read_covering_crops_batch
-from evaluation.metrics import rmse_and_r2
-from evaluation.predict import crop_mean_predictions
+from evaluation.metrics import ice_consistency_scores
+from evaluation.predict import ice_consistency_predictions_by_model
 from logs.benchmark import log_benchmark
 from logs.images.ice import ice_image
 
@@ -71,27 +71,31 @@ def evaluate(
         False,
         read_batch=partial(read_covering_crops_batch, targets=targets),
     )
-    predictions = {
-        share: {protocol: {} for protocol in held} for share, held in models.items()
+    flat = {
+        (share, protocol): model
+        for share, held in models.items()
+        for protocol, model in held.items()
     }
-    for held in models.values():
-        for model in held.values():
-            model.eval()
-    with torch.no_grad():
-        for batch in loader:
-            batch_predictions = crop_mean_predictions(models, batch, device)
-            for share, held in batch_predictions.items():
-                for protocol, by_tile in held.items():
-                    predictions[share][protocol].update(by_tile)
-    drawn = predictions[list(models)[-1]]
+    for model in flat.values():
+        model.eval()
+    predictions = ice_consistency_predictions_by_model(flat, loader, device)
+    drawn = list(models)[-1]
     by_tile = build.read_observation_metadata()
     images = [
         ice_image(
             drawn_arrays(build, shown, by_tile[tile][shown], layout),
             targets[tile],
-            {protocol: held[tile] for protocol, held in drawn.items()},
+            {
+                protocol: held[tile]
+                for (share, protocol), held in predictions.items()
+                if share == drawn
+            },
         )
         for tile in tiles
     ]
-    scores = {share: rmse_and_r2(held, targets) for share, held in predictions.items()}
+    scores = [
+        score
+        for (share, protocol), held in predictions.items()
+        for score in ice_consistency_scores(held, targets, share, protocol)
+    ]
     log_benchmark(run, scores, images)

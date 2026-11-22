@@ -5,7 +5,9 @@ from __future__ import annotations
 from torch import Tensor
 
 
-def mse(prediction: Tensor, target: Tensor, spread: Tensor, scored: Tensor) -> Tensor:
+def mean_squared_error(
+    prediction: Tensor, target: Tensor, spread: Tensor, scored: Tensor
+) -> Tensor:
     """Return the mean squared error over the scored points, each target in its spread.
 
     Args:

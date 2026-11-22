@@ -12,23 +12,17 @@ import torch
 from mars_multisensor_mae.dataset.loader import tile_loader
 from mars_multisensor_mae.dataset.models.patch import PatchLayout
 from mars_multisensor_mae.dataset.store import DatasetBuild
-from mars_multisensor_mae.logs.tracker import console_logger
 from torch import Tensor
 from torch.nn.utils import clip_grad_norm_
 from wandb.sdk.wandb_run import Run
 
 from architecture import BenchmarkModel
 from dataset.loader import read_budget_crops_batch, read_covering_crops_batch
-from evaluation.metrics import rmse_and_r2
-from finetuning.loss import mse
-from finetuning.optimizer import (
-    finetune_optimizers_and_schedules,
-)
+from finetuning.loss import mean_squared_error
+from finetuning.optimizer import optimizer_and_schedule
 from finetuning.step import batch_step
-from finetuning.validate import validate
-from logs.benchmark import log_epoch, log_step
-
-log = console_logger(__name__)
+from finetuning.validate import best_validation_weights, validation_scores
+from logs.benchmark import log_step, log_validation
 
 
 def finetune(
@@ -120,28 +114,31 @@ def finetune(
         False,
         read_batch=partial(read_covering_crops_batch, targets=targets),
     )
-    optimizers = finetune_optimizers_and_schedules(
-        models,
-        head_learning_rate,
-        encoder_learning_rate,
-        weight_decay,
-        warmup_steps,
-        num_steps,
-    )
+    optimizers = {
+        protocol: optimizer_and_schedule(
+            model,
+            head_learning_rate,
+            encoder_learning_rate,
+            weight_decay,
+            warmup_steps,
+            num_steps,
+        )
+        for protocol, model in models.items()
+    }
     # Each protocol has its own scaler, so an overflow skips only its own step
     scalers = {protocol: torch.amp.GradScaler(device.type) for protocol in models}
     scale = torch.as_tensor(spread, device=device)
     best, kept = dict.fromkeys(models, -math.inf), {}
     batches = chain.from_iterable(repeat(training))
+    for model in models.values():
+        model.train()
     for step in range(1, num_steps + 1):
         batch = next(batches)
-        for model in models.values():
-            model.train()
         predictions = batch_step(models, batch.tokens, device)
         target = torch.as_tensor(batch.targets, device=device)
         scored = torch.as_tensor(batch.scored, device=device)
         losses = {
-            protocol: mse(prediction, target, scale, scored)
+            protocol: mean_squared_error(prediction, target, scale, scored)
             for protocol, prediction in predictions.items()
         }
         for protocol, (optimizer, scheduler) in optimizers.items():
@@ -155,16 +152,11 @@ def finetune(
         log_step(run, step, share, {name: float(one) for name, one in losses.items()})
         if step % validate_every and step < num_steps:
             continue
-        scores = rmse_and_r2(validate(models, validation, device), targets)
-        log_epoch(run, step, share, scores)
-        for protocol, model in models.items():
-            fit = float(np.mean([held["R2"] for held in scores[protocol].values()]))
-            log.info("%s %s step %d validation R2 %.4f", protocol, share, step, fit)
-            if fit > best[protocol]:
-                best[protocol] = fit
-                kept[protocol] = {
-                    name: one.detach().cpu().clone()
-                    for name, one in model.named_parameters()
-                    if one.requires_grad
-                }
+        for model in models.values():
+            model.eval()
+        scores = validation_scores(models, validation, targets, share, device)
+        log_validation(run, step, scores)
+        best, kept = best_validation_weights(models, scores, best, kept, share, step)
+        for model in models.values():
+            model.train()
     return kept

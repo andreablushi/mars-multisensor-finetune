@@ -9,6 +9,8 @@ from mars_multisensor_mae.logs.images.panels import DrawnImage
 from mars_multisensor_mae.logs.tracker import RESULTS_STEP
 from wandb.sdk.wandb_run import Run
 
+from evaluation.models.metrics import IceScore
+
 BENCHMARK = "benchmark"
 
 FINETUNE = f"{BENCHMARK}-finetune"
@@ -16,25 +18,6 @@ FINETUNE = f"{BENCHMARK}-finetune"
 HEADS = "heads"
 
 STEP = f"{BENCHMARK}/step"
-
-
-def score_rows(
-    scores: Mapping[str, Mapping[str, Mapping[str, float]]],
-) -> list[tuple[str, str, str, float]]:
-    """Return every score as one row.
-
-    Args:
-        scores: Each metric, keyed by protocol, then by target and metric.
-
-    Returns:
-        rows: Each score's protocol, target, metric and value.
-    """
-    return [
-        (protocol, target, metric, value)
-        for protocol, by_target in scores.items()
-        for target, held in by_target.items()
-        for metric, value in held.items()
-    ]
 
 
 def log_step(run: Run, step: int, share: str, losses: Mapping[str, float]) -> None:
@@ -55,55 +38,47 @@ def log_step(run: Run, step: int, share: str, losses: Mapping[str, float]) -> No
     )
 
 
-def log_epoch(
-    run: Run,
-    step: int,
-    share: str,
-    scores: Mapping[str, Mapping[str, Mapping[str, float]]],
-) -> None:
+def log_validation(run: Run, step: int, scores: Sequence[IceScore]) -> None:
     """Log one validation, every protocol's scores against the step.
 
     Args:
         run: The tracked run.
         step: The step validated at.
-        share: What the share of the tiles trained on is logged as.
-        scores: Each validation metric, keyed by protocol, then by target and metric.
+        scores: Each protocol's validation RMSE and R2 of every target.
     """
     run.define_metric(f"{BENCHMARK}/*", step_metric=STEP)
     run.log(
         {STEP: step}
         | {
             f"{BENCHMARK}/{protocol}/{share}/validation/{target}/{metric}": value
-            for protocol, target, metric, value in score_rows(scores)
+            for share, protocol, target, metric, value in scores
         }
     )
 
 
 def log_benchmark(
     run: Run,
-    scores: Mapping[str, Mapping[str, Mapping[str, Mapping[str, float]]]],
+    scores: Sequence[IceScore],
     images: Sequence[DrawnImage],
 ) -> None:
     """Log the test scores and drawn tiles at one step for every run, or after it.
 
     Args:
         run: The tracked run.
-        scores: Each test metric, keyed by the share of the tiles trained on, then
-            by protocol, target and metric.
+        scores: Every model's test RMSE and R2 of each target.
         images: Each drawn tile's image and caption, logged as qualitative 1 on.
     """
-    rows = [(share, *row) for share, held in scores.items() for row in score_rows(held)]
     run.summary.update(
         {
             f"{BENCHMARK}/{protocol}/{share}/test/{target}/{metric}": value
-            for share, protocol, target, metric, value in rows
+            for share, protocol, target, metric, value in scores
         }
     )
     run.log(
         {
             f"{BENCHMARK}/scores": wandb.Table(
                 columns=["share", "protocol", "target", "metric", "value"],
-                data=[list(row) for row in rows],
+                data=[list(row) for row in scores],
             ),
             **{
                 f"{BENCHMARK}/qualitative-{at}": wandb.Image(image, caption=caption)
