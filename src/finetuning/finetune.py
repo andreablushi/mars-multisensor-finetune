@@ -9,8 +9,6 @@ from itertools import chain, repeat
 
 import numpy as np
 import torch
-from ice_consistency.configs import GRID_SPACING_KM
-from mars_multisensor_dataset.common.maths.physics import METRES_PER_KM
 from mars_multisensor_mae.dataset.loader import tile_loader
 from mars_multisensor_mae.dataset.models.patch import PatchLayout
 from mars_multisensor_mae.dataset.store import DatasetBuild
@@ -20,22 +18,17 @@ from torch.nn.utils import clip_grad_norm_
 from wandb.sdk.wandb_run import Run
 
 from architecture.model import BenchmarkModel
-from dataset.loader import read_covering_crops_batch
+from dataset.loader import read_budget_crops_batch, read_covering_crops_batch
 from evaluation.metrics import rmse_and_r2
 from finetuning.loss import mse
 from finetuning.optimizer import (
     finetune_optimizers_and_schedules,
 )
-from finetuning.step import (
-    batch_step,
-    scored_swim_points,
-)
+from finetuning.step import batch_step
 from finetuning.validate import validate
 from logs.benchmark import log_epoch, log_step
 
 log = console_logger(__name__)
-
-REACH_M = GRID_SPACING_KM * METRES_PER_KM / 2
 
 
 def finetune(
@@ -111,6 +104,9 @@ def finetune(
         workers,
         True,
         True,
+        read_batch=partial(
+            read_budget_crops_batch, targets=targets, scale=budget_scale
+        ),
     )
     validation = tile_loader(
         build,
@@ -122,7 +118,7 @@ def finetune(
         batch_size,
         workers,
         False,
-        read_batch=partial(read_covering_crops_batch, reach_m=REACH_M),
+        read_batch=partial(read_covering_crops_batch, targets=targets),
     )
     optimizers = finetune_optimizers_and_schedules(
         models,
@@ -136,17 +132,14 @@ def finetune(
     scalers = {protocol: torch.amp.GradScaler(device.type) for protocol in models}
     scale = torch.as_tensor(spread, device=device)
     best, kept = dict.fromkeys(models, -math.inf), {}
-    points = next(iter(models.values())).probe.points[:, :2].cpu()  # (P * P, 2)
     batches = chain.from_iterable(repeat(training))
     for step in range(1, num_steps + 1):
-        batch, identities = next(batches)
+        batch = next(batches)
         for model in models.values():
             model.train()
-        predictions = batch_step(models, batch, device)
-        target = torch.as_tensor(
-            np.stack([targets[tile] for tile in identities]), device=device
-        )
-        scored = scored_swim_points(batch, points, REACH_M).to(device)
+        predictions = batch_step(models, batch.tokens, device)
+        target = torch.as_tensor(batch.targets, device=device)
+        scored = torch.as_tensor(batch.scored, device=device)
         losses = {
             protocol: mse(prediction, target, scale, scored)
             for protocol, prediction in predictions.items()

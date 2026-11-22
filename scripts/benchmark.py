@@ -21,7 +21,7 @@ from utils.model import built_benchmark_model, built_pretrained_model
 
 from configs.load import load_config
 from configs.paths import ARTIFACTS_ROOT, heads_path
-from dataset.loader import swim_targets_loader, tiles_split_by_square
+from dataset.loader import balanced_kfold_tile_split, swim_targets_by_tile
 from evaluation import evaluate as evaluation
 from finetuning import finetune as finetuning
 from logs.benchmark import BENCHMARK, FINETUNE, HEADS
@@ -64,10 +64,10 @@ def run_benchmark(
         for tile, one in published_ice_labels(config).items()
         if tile in by_tile
     }
-    training, validation, test = tiles_split_by_square(
-        labels, config.benchmark.folds, config.benchmark.block_deg, config.dataset.seed
+    training, validation, test = balanced_kfold_tile_split(
+        labels, config.benchmark.folds, config.dataset.seed
     )
-    targets = swim_targets_loader(labels)
+    targets = swim_targets_by_tile(labels)
     spread = np.stack([targets[tile] for tile in training]).std(axis=(0, 1))  # (Z,)
     settings = config.benchmark.finetune
     # Each share is the first tiles of one draw, so a larger share holds the smaller
@@ -153,7 +153,6 @@ def run_benchmark(
             config.benchmark.instruments,
             layout,
             config.dataset.budget,
-            finetuning.REACH_M,
             config.benchmark.evaluation.batch_size,
             config.benchmark.evaluation.tiles,
             config.benchmark.evaluation.shown,

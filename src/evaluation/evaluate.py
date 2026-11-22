@@ -32,7 +32,6 @@ def evaluate(
     instruments: Sequence[str],
     layout: PatchLayout,
     budget: Mapping[str, int],
-    reach_m: float,
     batch_size: int,
     tiles: Sequence[str],
     shown: str,
@@ -54,7 +53,6 @@ def evaluate(
         layout: How each instrument is cut into patches, and the shape the model
             reads one in.
         budget: How many patches of each instrument a test crop keeps.
-        reach_m: How near a read patch of a crop a point is predicted, in metres.
         batch_size: How many tiles one batch holds, each read as its covering crops.
         tiles: The test tiles drawn as SWIM's grid beside the models', in
             qualitative order.
@@ -74,7 +72,7 @@ def evaluate(
         batch_size,
         workers,
         False,
-        read_batch=partial(read_covering_crops_batch, reach_m=reach_m),
+        read_batch=partial(read_covering_crops_batch, targets=targets),
     )
     predictions = {
         share: {protocol: {} for protocol in held} for share, held in models.items()
@@ -84,10 +82,8 @@ def evaluate(
         for model in held.values():
             model.eval()
     with torch.no_grad():
-        for batch, identities, scored in loader:
-            batch_predictions = crop_mean_predictions(
-                models, batch, identities, scored, still, device
-            )
+        for batch in loader:
+            batch_predictions = crop_mean_predictions(models, batch, still, device)
             for share, held in batch_predictions.items():
                 for protocol, by_tile in held.items():
                     predictions[share][protocol].update(by_tile)

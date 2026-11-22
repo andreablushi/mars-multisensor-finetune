@@ -133,7 +133,6 @@ class BenchmarkConfig:
         instruments: The instruments the head reads.
         folds: How many equal folds the labelled tiles are dealt into, the first
             testing, the second validating and the rest training.
-        block_deg: How wide a square of the map is, in degrees, each one dealt whole.
         fractions: The shares of the training tiles each protocol is trained on.
         probe: The head's architecture.
         finetune: How the head is trained.
@@ -144,7 +143,6 @@ class BenchmarkConfig:
     build: str
     instruments: list[str]
     folds: int
-    block_deg: float
     fractions: list[float]
     probe: ProbeConfig
     finetune: FinetuneConfig

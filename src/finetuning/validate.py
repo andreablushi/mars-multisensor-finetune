@@ -37,10 +37,10 @@ def validate(
     for model in models.values():
         model.eval()
     with torch.no_grad():
-        for batch, identities, scored in loader:
-            held = crop_mean_predictions(
-                {"validation": models}, batch, identities, scored, still, device
-            )["validation"]
+        for batch in loader:
+            held = crop_mean_predictions({"validation": models}, batch, still, device)[
+                "validation"
+            ]
             for protocol, by_tile in held.items():
                 predictions[protocol].update(by_tile)
     return predictions
