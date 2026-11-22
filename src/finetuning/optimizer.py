@@ -10,7 +10,7 @@ import torch
 from mars_multisensor_mae.training.optimizer import cosine_warmup_share
 from torch.optim.lr_scheduler import LambdaLR
 
-from architecture.model import BenchmarkModel
+from architecture import BenchmarkModel
 
 
 def finetune_optimizers_and_schedules(

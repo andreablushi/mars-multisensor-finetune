@@ -7,17 +7,14 @@ from collections.abc import Mapping
 import numpy as np
 import torch
 
-from architecture.model import (
-    PROTOCOLS,
-    BenchmarkModel,
-)
+from architecture import BenchmarkModel
+from architecture.probe_model import AttentiveProbeModel
 from dataset.models.swim import SwimBatch
 
 
 def crop_mean_predictions(
     models: Mapping[str, Mapping[str, BenchmarkModel]],
     batch: SwimBatch,
-    still: str,
     device: torch.device,
 ) -> dict[str, dict[str, dict[str, np.ndarray]]]:
     """Return each tile's prediction by every model, a point the mean of its crops'.
@@ -25,7 +22,6 @@ def crop_mean_predictions(
     Args:
         models: Each share's model of each protocol, on the device.
         batch: The crops, a tile's crops side by side, and the points each predicts.
-        still: The protocol whose MAE is frozen, read once for every share.
         device: Where the models run.
 
     Returns:
@@ -42,10 +38,19 @@ def crop_mean_predictions(
     predictions = {share: {} for share in models}
     with torch.autocast(device.type, dtype=torch.float16):
         # The frozen MAE is the same under every share, so it reads once
-        frozen = next(iter(models.values()))[still].tokens(tokens)
+        still = next(
+            model
+            for model in next(iter(models.values())).values()
+            if isinstance(model, AttentiveProbeModel)
+        )
+        frozen = still.mae.embed_tokens(tokens).patch_tokens_context()
         for share, held in models.items():
             for protocol, model in held.items():
-                read_tokens = model.tokens(tokens) if PROTOCOLS[protocol] else frozen
+                read_tokens = (
+                    frozen
+                    if isinstance(model, AttentiveProbeModel)
+                    else model.mae.embed_tokens(tokens).patch_tokens_context()
+                )
                 predicted = model.probe(read_tokens).float().cpu() * weights
                 predictions[share][protocol] = {
                     tile: (predicted[at].sum(0) / weights[at].sum(0)).numpy()

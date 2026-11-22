@@ -8,10 +8,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from architecture.model import (
-    PROTOCOLS,
-    BenchmarkModel,
-)
+from architecture import BenchmarkModel
 from evaluation.predict import crop_mean_predictions
 
 
@@ -32,13 +29,12 @@ def validate(
         predictions: Every point's prediction of each target, the mean of the crops
             reaching it, keyed by protocol, then by tile. (P * P, Z)
     """
-    still = next(protocol for protocol, tuned in PROTOCOLS.items() if not tuned)
     predictions = {protocol: {} for protocol in models}
     for model in models.values():
         model.eval()
     with torch.no_grad():
         for batch in loader:
-            held = crop_mean_predictions({"validation": models}, batch, still, device)[
+            held = crop_mean_predictions({"validation": models}, batch, device)[
                 "validation"
             ]
             for protocol, by_tile in held.items():

@@ -17,7 +17,7 @@ from torch import Tensor
 from torch.nn.utils import clip_grad_norm_
 from wandb.sdk.wandb_run import Run
 
-from architecture.model import BenchmarkModel
+from architecture import BenchmarkModel
 from dataset.loader import read_budget_crops_batch, read_covering_crops_batch
 from evaluation.metrics import rmse_and_r2
 from finetuning.loss import mse

@@ -8,7 +8,7 @@ import torch
 from mars_multisensor_mae.architecture.models.tokens import Tokens
 from torch import Tensor
 
-from architecture.model import BenchmarkModel
+from architecture import BenchmarkModel
 
 
 def batch_step(

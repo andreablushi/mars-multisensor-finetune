@@ -13,10 +13,7 @@ from mars_multisensor_mae.dataset.patches import drawn_arrays
 from mars_multisensor_mae.dataset.store import DatasetBuild
 from wandb.sdk.wandb_run import Run
 
-from architecture.model import (
-    PROTOCOLS,
-    BenchmarkModel,
-)
+from architecture import BenchmarkModel
 from dataset.loader import read_covering_crops_batch
 from evaluation.metrics import rmse_and_r2
 from evaluation.predict import crop_mean_predictions
@@ -77,13 +74,12 @@ def evaluate(
     predictions = {
         share: {protocol: {} for protocol in held} for share, held in models.items()
     }
-    still = next(protocol for protocol, tuned in PROTOCOLS.items() if not tuned)
     for held in models.values():
         for model in held.values():
             model.eval()
     with torch.no_grad():
         for batch in loader:
-            batch_predictions = crop_mean_predictions(models, batch, still, device)
+            batch_predictions = crop_mean_predictions(models, batch, device)
             for share, held in batch_predictions.items():
                 for protocol, by_tile in held.items():
                     predictions[share][protocol].update(by_tile)

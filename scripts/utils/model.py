@@ -11,8 +11,12 @@ from mars_multisensor_mae.dataset.models.patch import PatchLayout
 from mars_multisensor_mae.dataset.store import DatasetBuild
 from torch import Tensor
 
-from architecture.model import PROTOCOLS, BenchmarkModel
+from architecture import BenchmarkModel
+from architecture.finetune_model import FinetunedModel
+from architecture.probe_model import AttentiveProbeModel
 from configs.schema import Config
+
+PROTOCOLS = {"attentive-probe": AttentiveProbeModel, "fine-tune": FinetunedModel}
 
 
 def built_pretrained_model(
@@ -66,13 +70,12 @@ def built_benchmark_model(
             encoders trained, on the device, keyed by protocol.
     """
     models = {}
-    for protocol, finetuned in PROTOCOLS.items():
-        model = BenchmarkModel(
+    for protocol, model_class in PROTOCOLS.items():
+        model = model_class(
             mae,
             config.model.encoder_dim,
             config.model.encoder_heads,
             config.benchmark.probe.depth,
-            finetuned,
             config.dataset.seed,
         ).to(device)
         if heads:
