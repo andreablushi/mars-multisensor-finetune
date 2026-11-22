@@ -7,7 +7,6 @@ from collections.abc import Mapping
 
 import torch
 from mars_multisensor_mae.architecture.models.tokens import Tokens
-from mars_multisensor_mae.training.step import autocast_dtype
 from torch import Tensor
 
 from architecture.model import BenchmarkModel
@@ -30,7 +29,7 @@ def batch_step(
             protocol. (B, P * P, Z)
     """
     batch = {name: tokens.to(device) for name, tokens in batch.items()}
-    with torch.autocast(device.type, dtype=autocast_dtype(device)):
+    with torch.autocast(device.type, dtype=torch.float16):
         return {protocol: model(batch).float() for protocol, model in models.items()}
 
 

@@ -7,7 +7,6 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 import torch
 from mars_multisensor_mae.architecture.models.tokens import Tokens
-from mars_multisensor_mae.training.step import autocast_dtype
 
 from architecture.model import (
     PROTOCOLS,
@@ -45,7 +44,7 @@ def crop_mean_predictions(
     }
     batch = {name: tokens.to(device) for name, tokens in batch.items()}
     predictions = {share: {} for share in models}
-    with torch.autocast(device.type, dtype=autocast_dtype(device)):
+    with torch.autocast(device.type, dtype=torch.float16):
         # The frozen MAE is the same under every share, so it reads once
         frozen = next(iter(models.values()))[still].tokens(batch)
         for share, held in models.items():

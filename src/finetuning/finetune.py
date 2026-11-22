@@ -15,7 +15,6 @@ from mars_multisensor_mae.dataset.loader import tile_loader
 from mars_multisensor_mae.dataset.models.patch import PatchLayout
 from mars_multisensor_mae.dataset.store import DatasetBuild
 from mars_multisensor_mae.logs.tracker import console_logger
-from mars_multisensor_mae.training.step import autocast_dtype
 from torch import Tensor
 from torch.nn.utils import clip_grad_norm_
 from wandb.sdk.wandb_run import Run
@@ -134,11 +133,7 @@ def finetune(
         num_steps,
     )
     # Each protocol has its own scaler, so an overflow skips only its own step
-    float16 = autocast_dtype(device) == torch.float16
-    scalers = {
-        protocol: torch.amp.GradScaler(device.type, enabled=float16)
-        for protocol in models
-    }
+    scalers = {protocol: torch.amp.GradScaler(device.type) for protocol in models}
     scale = torch.as_tensor(spread, device=device)
     best, kept = dict.fromkeys(models, -math.inf), {}
     points = next(iter(models.values())).probe.points[:, :2].cpu()  # (P * P, 2)
