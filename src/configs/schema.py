@@ -17,6 +17,10 @@ class DatasetConfig:
         stats_version: The version whose training build sets the normalising
             constants, the version itself for runs that logged none.
         root: Where every build sits on this machine, under a directory of its own name.
+        store: Where an object missing from root comes from, "digitalhub" fetching it
+            from the platform, "disk" failing without ever reaching the platform.
+        ready_root: Where every build's cut tiles sit, under a directory of the
+            build's own name, or None for a directory in each build's root.
         clip: The low and high each instrument's values are clipped to, None for open.
         sharad_atmosphere_cropping: Whether SHARAD is cropped below its atmosphere.
         acquisition: The acquisition angles of each instrument, as the index names them.
@@ -27,7 +31,6 @@ class DatasetConfig:
 
     version: str
     build: str
-    root: str
     clip: dict[str, list[float | None]]
     sharad_atmosphere_cropping: bool
     acquisition: dict[str, list[str]]
@@ -35,6 +38,9 @@ class DatasetConfig:
     budget: dict[str, int]
     seed: int
     stats_version: str = "${dataset.version}"
+    root: str = "data/dataset"
+    store: str = "digitalhub"
+    ready_root: str | None = None
 
 
 @dataclass

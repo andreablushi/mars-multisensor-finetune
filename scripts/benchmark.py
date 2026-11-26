@@ -6,17 +6,18 @@ import math
 
 import numpy as np
 import torch
-from dhub.store import published_dataset_build, published_ice_labels
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from mars_multisensor_mae.architecture.load import cross_sensor_mae_with_logged_weights
 from mars_multisensor_mae.configs.load import named_sample
+from mars_multisensor_mae.dataset.loader import check_complete_cut
 from mars_multisensor_mae.logs.tracker import (
     console_logger,
     log_checkpoint,
     resumed_logging,
     start_logging,
 )
+from utils.build import published_dataset_build, published_ice_labels
 from utils.model import built_benchmark_model, built_pretrained_model
 
 from configs.load import load_config
@@ -50,6 +51,7 @@ def run_benchmark(
     config, recorded = load_config(run_name, overrides or [])
     build = published_dataset_build(config, config.benchmark.build)
     model, device, layout = built_pretrained_model(config, build)
+    check_complete_cut(build, layout)
     workers = requested_read_workers(config, BENCHMARK)
     left = [
         one

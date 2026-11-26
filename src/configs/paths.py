@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -10,11 +11,15 @@ ENV_PATH = REPO_ROOT / ".env"
 
 CONFIGS_ROOT = REPO_ROOT / "configs"
 
-ARTIFACTS_ROOT = REPO_ROOT / "artifacts"
+OUTPUT_ROOT = Path(os.environ.get("MAE_OUTPUT_ROOT", REPO_ROOT))
 
-BENCHMARKS_ROOT = REPO_ROOT / "benchmarks"
+ARTIFACTS_ROOT = OUTPUT_ROOT / "artifacts"
+
+BENCHMARKS_ROOT = OUTPUT_ROOT / "benchmarks"
 
 HEADS_FILE = "heads.pt"
+
+LOGGED_CONFIG_FILE = "logged_config.json"
 
 
 def build_root(build: str, root: str) -> Path:
@@ -22,7 +27,7 @@ def build_root(build: str, root: str) -> Path:
 
     Args:
         build: The build's name.
-        root: The folder holding the builds, relative to the repository.
+        root: The folder holding the builds, relative to the repository or absolute.
 
     Returns:
         root: The build's folder.
@@ -40,3 +45,15 @@ def heads_path(run_name: str) -> Path:
         path: The heads' file.
     """
     return BENCHMARKS_ROOT / run_name / HEADS_FILE
+
+
+def logged_config_path(run_name: str) -> Path:
+    """Return where an offline job reads the config a pretrained run logged.
+
+    Args:
+        run_name: What the pretrained run is called.
+
+    Returns:
+        path: The config's file, written by the prepare step before the job.
+    """
+    return ARTIFACTS_ROOT / run_name / LOGGED_CONFIG_FILE
